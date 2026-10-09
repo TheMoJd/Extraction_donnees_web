@@ -1,0 +1,153 @@
+# Orchestration locale du pipeline CheckIt.AI (étape 4).
+#
+# Dérivé du docker-compose officiel d'Airflow 3.3.2, simplifié pour un usage local :
+#   - LocalExecutor au lieu de CeleryExecutor : les tâches tournent dans le scheduler,
+#     donc pas besoin de Redis ni de workers Celery (moins de RAM, moins de disque).
+#   - Un seul serveur PostgreSQL qui héberge deux bases séparées :
+#       * airflow : métadonnées d'Airflow (historique des runs, connexions chiffrées...)
+#       * checkit : les publications chargées par le pipeline
+#
+# Tous les secrets viennent du fichier .env (jamais commité). Compose remplace les ${VAR}
+# à partir de ce fichier. Chaque conteneur ne reçoit que les secrets dont il a besoin.
+#
+# Démarrage :  docker compose up -d --build
+# Interface :  http://localhost:8080
+
+x-airflow-common:
+  &airflow-common
+  build:
+    context: ./airflow
+  image: checkit-airflow:3.3.2
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD}@postgres/airflow
+    # Clé Fernet : chiffre les mots de passe des Connections stockées dans la base airflow.
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
+    AIRFLOW__API_AUTH__JWT_ISSUER: airflow
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+    # Le code du projet est monté dans /opt/checkit : on le rend importable par les DAGs.
+    PYTHONPATH: /opt/checkit/src
+    NEWSAPI_KEY: ${NEWSAPI_KEY}
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/config:/opt/airflow/config
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./src:/opt/checkit/src
+    - ./data:/opt/checkit/data
+    - ./logs:/opt/checkit/logs
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine  # déjà présente localement, plus légère que postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_DB: postgres
+      # Authentification par mot de passe haché (SCRAM-SHA-256), pas de "trust".
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+      # Lus uniquement par le script d'initialisation pour créer les rôles.
+      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      CHECKIT_ETL_PASSWORD: ${CHECKIT_ETL_PASSWORD}
+      CHECKIT_LECTEUR_PASSWORD: ${CHECKIT_LECTEUR_PASSWORD}
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    # Exposé uniquement sur la machine locale (127.0.0.1), pas sur le réseau.
+    # Port 5435 côté hôte : 5432 et 5433 sont déjà pris par un PostgreSQL installé sur Windows.
+    ports:
+      - "127.0.0.1:5435:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # Conteneur à usage unique : migre la base airflow, crée le compte admin de l'UI
+  # et enregistre la connexion vers la base checkit (mot de passe chiffré par Fernet).
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /opt/airflow/{logs,dags,plugins,config}
+        /entrypoint airflow version
+        /entrypoint airflow config list >/dev/null
+        /entrypoint airflow connections delete checkit_postgres >/dev/null 2>&1 || true
+        /entrypoint airflow connections add checkit_postgres \
+          --conn-type postgres --conn-host postgres --conn-port 5432 \
+          --conn-schema checkit --conn-login checkit_etl \
+          --conn-password "$${CHECKIT_ETL_PASSWORD}"
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/{logs,dags,plugins,config}
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USER}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+      CHECKIT_ETL_PASSWORD: ${CHECKIT_ETL_PASSWORD}
+    user: "0:0"
+
+volumes:
+  postgres-db-volume:

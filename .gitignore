@@ -7,3 +7,8 @@ data/processed/*.csv
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 logs/*.log
+CLAUDE.md
+enonce.md
+# Fichiers générés par Airflow (logs des tâches, airflow.cfg)
+airflow/logs/
+airflow/config/

@@ -1,0 +1,6 @@
+# Dépendances du projet absentes de l'image Airflow de base.
+# requests, python-dateutil et psycopg2 y sont déjà : ne pas les épingler ici
+# pour ne pas entrer en conflit avec les versions choisies par Airflow.
+feedparser==6.0.11
+python-dotenv==1.0.1
+pandas==2.2.3

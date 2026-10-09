@@ -1,0 +1,4 @@
+# Les scripts exécutés dans les conteneurs Linux doivent garder des fins de ligne LF :
+# avec CRLF (Windows), bash échoue sur "\r: command not found".
+*.sh text eol=lf
+Dockerfile text eol=lf
