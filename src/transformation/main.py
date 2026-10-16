@@ -79,7 +79,8 @@ def exporte_csv(records: list[dict], chemin: Path) -> None:
     pd.DataFrame(records).to_csv(chemin, index=False, encoding="utf-8")
 
 
-def run(chemin_brut: Path | None = None) -> Path:
+def run(chemin_brut: Path | None = None) -> dict:
+    """Transforme un fichier brut et retourne un rapport (chemin du CSV + compteurs pour le monitoring)."""
     chemin_brut = chemin_brut or trouve_dernier_fichier_brut()
     if chemin_brut is None:
         logger.error("Aucun fichier brut trouvé dans %s", RAW_DATA_DIR)
@@ -104,7 +105,14 @@ def run(chemin_brut: Path | None = None) -> Path:
         "Transformation terminée : %d valides / %d rejetés / %d doublons / %d images valides -> %s",
         len(records_uniques), rejetes, doublons, images_valides, chemin_sortie,
     )
-    return chemin_sortie
+    return {
+        "chemin": str(chemin_sortie),
+        "nb_lus": len(records_bruts),
+        "nb_valides": len(records_uniques),
+        "nb_rejetes": rejetes,
+        "nb_doublons": doublons,
+        "nb_images_valides": images_valides,
+    }
 
 
 if __name__ == "__main__":

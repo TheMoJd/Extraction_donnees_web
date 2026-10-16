@@ -12,3 +12,5 @@ enonce.md
 # Fichiers générés par Airflow (logs des tâches, airflow.cfg)
 airflow/logs/
 airflow/config/
+# Rapports locaux des outils gstack
+.gstack/

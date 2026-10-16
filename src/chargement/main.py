@@ -53,8 +53,11 @@ def insere_publications(connexion, lignes: list[tuple]) -> int:
     return len(inseres)
 
 
-def charge_fichier(chemin: Path, connexion) -> int:
-    """Point d'entrée réutilisé par le DAG Airflow, qui fournit sa propre connexion."""
+def charge_fichier(chemin: Path, connexion) -> dict:
+    """Point d'entrée réutilisé par le DAG Airflow, qui fournit sa propre connexion.
+
+    Retourne un rapport (compteurs pour le monitoring).
+    """
     lignes = lit_csv(chemin)
     try:
         nouvelles = insere_publications(connexion, lignes)
@@ -67,10 +70,10 @@ def charge_fichier(chemin: Path, connexion) -> int:
         "Chargement terminé : %d nouvelle(s) publication(s) / %d déjà présente(s)",
         nouvelles, len(lignes) - nouvelles,
     )
-    return nouvelles
+    return {"nb_nouvelles": nouvelles, "nb_deja_presentes": len(lignes) - nouvelles}
 
 
-def run(chemin_csv: Path | None = None) -> int:
+def run(chemin_csv: Path | None = None) -> dict:
     """Exécution hors Airflow : se connecte avec les paramètres de config.py."""
     chemin_csv = chemin_csv or trouve_dernier_csv()
     if chemin_csv is None:

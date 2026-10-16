@@ -12,7 +12,7 @@ Projet de formation (parcours Data Engineer) : pipeline d'acquisition de publica
 | 2. Scripts d'extraction | Scripts `.py` modulaires, sans intervention | Fait | `src/extraction/` |
 | 3. Pipeline de transformation | Pipeline reproductible et journalisé + schéma conceptuel (Mermaid) | Fait | `src/transformation/`, `docs/02_schema_conceptuel.md` |
 | 4. Orchestration Airflow | DAG ETL + chargement en base SQL/NoSQL sécurisée + preuves d'exécution | Fait (captures UI à ajouter dans `docs/captures/`) | `docker-compose.yaml`, `airflow/`, `db/init/`, `src/chargement/`, `docs/03_orchestration_airflow_et_base.md` |
-| 5. KPI et monitoring | Dashboard Streamlit + plan de monitoring (MD/PDF) | **À faire** | — |
+| 5. KPI et monitoring | Dashboard Streamlit + plan de monitoring (MD/PDF) | Fait | `src/monitoring/`, `dashboard/app.py`, `docs/04_plan_monitoring.md` |
 
 ## Architecture
 
@@ -20,15 +20,20 @@ Projet de formation (parcours Data Engineer) : pipeline d'acquisition de publica
 src/extraction/   main.py -> newsapi_extractor.py + rss_extractor.py -> data/raw/extraction_<ts>.json
 src/transformation/ main.py (lecture -> traitement -> export) + transform.py -> data/processed/processed_<ts>.csv
 src/chargement/   main.py : CSV -> table publications (INSERT ... ON CONFLICT DO NOTHING)
-airflow/dags/     checkit_etl.py : extraire >> transformer >> charger (PythonOperator, chemins via XCom)
-db/init/          01_init_bases.sh : bases airflow + checkit, rôles, table (1er démarrage du volume)
-logs/             extraction.log, transformation.log, chargement.log (logging console + fichier)
-docs/             livrables écrits (étapes 1, 3 et 4)
+src/monitoring/   config.py : SEUILS d'alerte (source unique) ; main.py : evalue_alertes + écriture table executions
+airflow/dags/     checkit_etl.py : extraire >> transformer >> charger >> enregistrer_metriques (rapports via XCom)
+db/init/          01_init_bases.sh (bases, rôles, publications) + 02_table_executions.sql (1er démarrage du volume)
+dashboard/        app.py : Streamlit, lit executions + publications avec le rôle checkit_lecteur
+tests/            test_monitoring.py : règles d'alerte (pytest, pythonpath=src via pytest.ini)
+logs/             extraction.log, transformation.log, chargement.log, monitoring.log
+docs/             livrables écrits (étapes 1, 3, 4 et 5)
 ```
 
 - **Docker** : Airflow 3.3.2 en LocalExecutor (api-server, scheduler, dag-processor, init) + `postgres:16-alpine`.
   Dans les conteneurs, le projet est monté dans `/opt/checkit` (`PYTHONPATH=/opt/checkit/src`).
-- **Rôles PostgreSQL** : `checkit_etl` (SELECT, INSERT), `checkit_lecteur` (SELECT, pour le dashboard).
+- **Rôles PostgreSQL** : `checkit_etl` (SELECT, INSERT ; + UPDATE sur `executions` seulement), `checkit_lecteur` (SELECT, pour le dashboard).
+- **Rapports d'étape** : chaque `run()` renvoie un dict (`chemin` + compteurs). Le DAG ajoute `duree_s` et
+  `memoire_max_mo`, puis `enregistrer_metriques` (`trigger_rule=ALL_DONE`) écrit une ligne par run dans `executions`.
   Dans Airflow, les identifiants viennent de la Connection `checkit_postgres` (chiffrée par Fernet).
 
 - **Sources retenues** : NewsAPI (`/v2/everything`, q="France", language=fr, 50 articles par appel)
@@ -40,7 +45,7 @@ docs/             livrables écrits (étapes 1, 3 et 4)
 
 ## Commandes
 
-`extraction`, `transformation` et `chargement` sont des packages Python : imports absolus (`from extraction.config import ...`),
+`extraction`, `transformation`, `chargement` et `monitoring` sont des packages Python : imports absolus (`from extraction.config import ...`),
 exécution en module (`python -m`) **depuis `src/`**.
 
 ```bash
@@ -55,6 +60,10 @@ cd src
 docker compose up -d --build       # UI Airflow : http://localhost:8080, PostgreSQL : localhost:5435
 docker compose exec airflow-scheduler airflow dags trigger checkit_etl
 docker compose exec postgres psql -U postgres -d checkit
+
+# KPI et tests (depuis la racine)
+.venv/Scripts/streamlit run dashboard/app.py   # http://localhost:8501
+.venv/Scripts/python -m pytest
 ```
 
 ## Conventions
@@ -80,4 +89,7 @@ docker compose exec postgres psql -U postgres -d checkit
   utilise psycopg2 (`execute_values`), donc le DAG ouvre lui-même la connexion psycopg2.
 - Fichiers horodatés à la seconde : garder `max_active_runs=1` sur le DAG.
 - `db/init/` ne s'exécute que si le volume `postgres-db-volume` est vide (`docker compose down -v` pour rejouer).
-- Pas de tests ni de README.
+- Un seuil d'alerte se change dans `src/monitoring/config.py` uniquement, puis mettre à jour `docs/04_plan_monitoring.md`.
+- En Airflow 3.3, `airflow tasks test` exécute réellement les tâches amont nécessaires (dont un appel NewsAPI).
+- `resource` (mémoire) n'existe que sous Linux : l'IDE Windows le signale, c'est normal (le DAG tourne dans le conteneur).
+- Pas de README.
