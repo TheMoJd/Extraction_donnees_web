@@ -8,10 +8,10 @@ from urllib.parse import urlparse
 import requests
 from dateutil import parser as date_parser
 
-from pipeline.config import IMAGE_VALIDATION_TIMEOUT
-from pipeline.common import setup_logger
+from transformation.config import IMAGE_VALIDATION_TIMEOUT
+from transformation.common import setup_logger
 
-logger = setup_logger("pipeline.transform")
+logger = setup_logger("transformation.transform")
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _NEWSAPI_TRUNCATION_RE = re.compile(r"\s*\[\+\d+ chars\]\s*$")

@@ -10,7 +10,7 @@ Projet de formation (parcours Data Engineer) : pipeline d'acquisition de publica
 |---|---|---|---|
 | 1. Explorer les sources | Rapport d'exploration (MD/PDF) | Fait | `docs/01_rapport_exploration_sources.md` |
 | 2. Scripts d'extraction | Scripts `.py` modulaires, sans intervention | Fait | `src/extraction/` |
-| 3. Pipeline de transformation | Pipeline reproductible et journalisé + schéma conceptuel (Mermaid) | Fait | `src/pipeline/`, `docs/02_schema_conceptuel.md` |
+| 3. Pipeline de transformation | Pipeline reproductible et journalisé + schéma conceptuel (Mermaid) | Fait | `src/transformation/`, `docs/02_schema_conceptuel.md` |
 | 4. Orchestration Airflow | DAG ETL + chargement en base SQL/NoSQL sécurisée + preuves d'exécution | Fait (captures UI à ajouter dans `docs/captures/`) | `docker-compose.yaml`, `airflow/`, `db/init/`, `src/chargement/`, `docs/03_orchestration_airflow_et_base.md` |
 | 5. KPI et monitoring | Dashboard Streamlit + plan de monitoring (MD/PDF) | **À faire** | — |
 
@@ -18,11 +18,11 @@ Projet de formation (parcours Data Engineer) : pipeline d'acquisition de publica
 
 ```
 src/extraction/   main.py -> newsapi_extractor.py + rss_extractor.py -> data/raw/extraction_<ts>.json
-src/pipeline/     main.py (lecture -> traitement -> export) + transform.py -> data/processed/processed_<ts>.csv
+src/transformation/ main.py (lecture -> traitement -> export) + transform.py -> data/processed/processed_<ts>.csv
 src/chargement/   main.py : CSV -> table publications (INSERT ... ON CONFLICT DO NOTHING)
 airflow/dags/     checkit_etl.py : extraire >> transformer >> charger (PythonOperator, chemins via XCom)
 db/init/          01_init_bases.sh : bases airflow + checkit, rôles, table (1er démarrage du volume)
-logs/             extraction.log, pipeline.log, chargement.log (logging console + fichier)
+logs/             extraction.log, transformation.log, chargement.log (logging console + fichier)
 docs/             livrables écrits (étapes 1, 3 et 4)
 ```
 
@@ -40,7 +40,7 @@ docs/             livrables écrits (étapes 1, 3 et 4)
 
 ## Commandes
 
-`extraction` et `pipeline` sont des packages Python : imports absolus (`from extraction.config import ...`),
+`extraction`, `transformation` et `chargement` sont des packages Python : imports absolus (`from extraction.config import ...`),
 exécution en module (`python -m`) **depuis `src/`**.
 
 ```bash
@@ -48,7 +48,7 @@ python -m venv .venv && .venv/Scripts/python -m pip install -r requirements.txt
 cp .env.example .env            # puis renseigner NEWSAPI_KEY
 cd src
 ../.venv/Scripts/python -m extraction.main
-../.venv/Scripts/python -m pipeline.main [chemin/fichier_brut.json]   # sans argument : dernier fichier brut
+../.venv/Scripts/python -m transformation.main [chemin/fichier_brut.json]   # sans argument : dernier fichier brut
 ../.venv/Scripts/python -m chargement.main [chemin/fichier.csv]        # nécessite le PostgreSQL Docker
 
 # Orchestration (depuis la racine)
@@ -60,7 +60,7 @@ docker compose exec postgres psql -U postgres -d checkit
 ## Conventions
 
 - Les secrets restent dans `.env` (ignoré par git). Ne jamais lire ni afficher `.env`.
-- Les noms de fonctions du pipeline sont en français et en verbe (`nettoie_texte`, `valide_image`),
+- Les noms de fonctions de la transformation et du chargement sont en français et en verbe (`nettoie_texte`, `valide_image`),
   ceux de l'extraction en anglais. Respecter la convention du module qu'on modifie.
 - Une fonction par responsabilité (connexion, parsing, nettoyage, sauvegarde), avec `try/except`
   et log sur chaque appel réseau.
@@ -68,7 +68,7 @@ docker compose exec postgres psql -U postgres -d checkit
 
 ## Points d'attention connus
 
-- `extraction` et `pipeline` ont chacun un `config.py` et un `common.py`. Toujours les importer
+- `extraction`, `transformation` et `chargement` ont chacun un `config.py` et un `common.py`. Toujours les importer
   qualifiés par le package : un import plat (`from config import ...`) recréerait le conflit de noms.
 - `valide_image()` fait des HEAD séquentiels : environ 1 seconde par publication (100 publications
   traitées en ~1 min 20). À paralléliser ou mettre en cache si le volume augmente.

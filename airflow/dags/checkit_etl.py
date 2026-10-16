@@ -22,10 +22,10 @@ def extraire() -> str:
 def transformer(ti) -> str:
     from pathlib import Path
 
-    from pipeline import main as pipeline
+    from transformation import main as transformation
 
     chemin_brut = ti.xcom_pull(task_ids="extraire")
-    return str(pipeline.run(Path(chemin_brut)))
+    return str(transformation.run(Path(chemin_brut)))
 
 
 def charger(ti) -> int:

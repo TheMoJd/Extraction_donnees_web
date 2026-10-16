@@ -1,6 +1,6 @@
 """Pipeline de transformation : lecture -> traitement -> export.
 
-Exécution (depuis src/) : python -m pipeline.main [chemin_fichier_brut.json]
+Exécution (depuis src/) : python -m transformation.main [chemin_fichier_brut.json]
 Sans argument, traite le fichier le plus récent de data/raw/.
 """
 import json
@@ -8,11 +8,11 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pipeline.config import RAW_DATA_DIR, PROCESSED_DATA_DIR, MIN_TITLE_LENGTH
-from pipeline.common import setup_logger
-from pipeline import transform
+from transformation.config import RAW_DATA_DIR, PROCESSED_DATA_DIR, MIN_TITLE_LENGTH
+from transformation.common import setup_logger
+from transformation import transform
 
-logger = setup_logger("pipeline.main")
+logger = setup_logger("transformation.main")
 
 
 def lire_fichier_brut(chemin: Path) -> list[dict]:

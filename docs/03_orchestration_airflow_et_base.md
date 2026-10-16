@@ -27,7 +27,7 @@ flowchart LR
 | Passage de données entre tâches | Seul le **chemin** du fichier transite par XCom, pas les données elles-mêmes |
 
 Les tâches appellent directement les fonctions des étapes 2 et 3 (`extraction.main.run`,
-`pipeline.main.run`) et le nouveau module `chargement`. Le code du projet n'est pas dupliqué dans
+`transformation.main.run`) et le nouveau module `chargement`. Le code du projet n'est pas dupliqué dans
 le DAG : il est monté dans le conteneur (`/opt/checkit/src`) et ajouté au `PYTHONPATH`.
 
 ## 2. Choix de la base : PostgreSQL

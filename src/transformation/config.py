@@ -1,4 +1,4 @@
-"""Paramètres configurables du pipeline de transformation."""
+"""Paramètres configurables de l'étape de transformation."""
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
